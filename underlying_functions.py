@@ -1,7 +1,25 @@
 import pandas as pd
 import sklearn 
 import numpy as np
-#imports bearbeiten
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+from tqdm import tnrange,tqdm_notebook
+from sklearn import linear_model
+import itertools
+from sklearn.metrics import mean_squared_error
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+import warnings
+warnings.filterwarnings("ignore")
+import statsmodels.api as sm
+from sklearn.linear_model import Lasso,Ridge, LinearRegression
+from sklearn.metrics import mean_squared_error as m
+from scipy import stats
+import random
 
 
 class General():
@@ -37,7 +55,7 @@ class Subset():
         for k in range(1,len(X.columns)+1):
             #looping over all possible subsets with size k
             for combo in itertools.combinations(X.columns,k):
-                model=lrg(X[list(combo)],y)#returns the RSS- and the R-squared value of the linear regression
+                model=General.lrg(X[list(combo)],y)#returns the RSS- and the R-squared value of the linear regression
                 #appending the results of the current subset
                 RSS_list.append(model[0])
                 R_squared_list.append(model[1])
@@ -66,7 +84,7 @@ class Subset():
             #the inner for loop is iterating over each combination, of one regressor, out of the remaining features
             for combo in itertools.combinations(remaining_features,1):
                 #calculating the linear regression model for the combination plus the already selected features 
-                model = lrg(df[list(combo) + selected_features],y_train)
+                model = General.lrg(df[list(combo) + selected_features],y_train)
                 #checking whether the current selection model has a lower RSS, than other selections
                 if (model[0] < best_RSS):
                     #overwriting the 'best' values
@@ -98,7 +116,7 @@ class Subset():
             for combo in itertools.combinations(variables,1):
                 if len(variables)>1:#only remove when there are at least 2 variables left
                     variables.remove(list(combo)[0])
-                    model = lrg(df[variables],y)  
+                    model = General.lrg(df[variables],y)  
                     temp_RSS_list.append(model[0])
                     if (model[0] < best_RSS):
                     #overwriting the 'best' values
@@ -151,3 +169,82 @@ class Subset():
             df[df['r_squaredadj']+stats.sem(df.r_squaredadj)>=max(df['r_squaredadj'])]['nf'])
         df_selection_one_se['One SE MSE']=min(df[df['mse']-stats.sem(df.mse)<=min(df['mse'])]['nf'])
         return df,df_selection,df_selection_one_se
+
+    def ic_plot(df1_bs,df2_bs,df3_bs,df1_fss,df2_fss,df3_fss,df1_be,df2_be,df3_be,one='BS',two='FSS',three='BE',pngname='save as png'):
+        fig=plt.figure(figsize=(20,10))
+        
+        ax=fig.add_subplot(2,2,1)
+
+        if(one!='null'):
+            ax.plot(df1_bs.nf,df1_bs.r_squaredadj,color='r',label='{f}'.format(f=one),alpha=0.7)
+            ax.scatter(df2_bs.iloc[2].nf,df2_bs.iloc[2].r_squaredadj,s=300,c='r',marker='x')
+            ax.axvline(df3_bs['One SE adj R sq'],c='r',linestyle='--',alpha=0.7)
+        if (two!='null'):
+            ax.plot(df1_fss.nf,df1_fss.r_squaredadj,color='blue',label='{f}'.format(f=two),alpha=0.7)
+            ax.scatter(df2_fss.iloc[2].nf,df2_fss.iloc[2].r_squaredadj,s=300,c='blue',marker='x')
+            ax.axvline(df3_fss['One SE adj R sq'],c='blue',linestyle='-.',alpha=0.7)
+        if (three!='null'):
+            ax.plot(df1_be.nf,df1_be.r_squaredadj,color='black',label='{f}'.format(f=three),alpha=0.7)
+            ax.scatter(df2_be.iloc[2].nf,df2_be.iloc[2].r_squaredadj,s=300,c='black',marker='x')
+            ax.axvline(df3_be['One SE adj R sq'],c='black',linestyle=':',alpha=0.7)
+        
+        ax.set_xlabel('Number of Variables')
+        ax.set_ylabel('adj. R_Squared')
+        ax.legend()
+
+        ax=fig.add_subplot(2,2,2)
+
+        if(one!='null'):
+            ax.plot(df1_bs.nf,df1_bs.aic,color='r',label='{f}'.format(f=one),alpha=0.7)
+            ax.scatter(df2_bs.iloc[0].nf,df2_bs.iloc[0].aic,s=300,c='r',marker='x')
+            ax.axvline(df3_bs['One SE AIC'],c='r',linestyle='--',alpha=0.7)
+        if(two!='null'):
+            ax.plot(df1_fss.nf,df1_fss.aic,color='blue',label='{f}'.format(f=two),alpha=0.7)
+            ax.scatter(df2_fss.iloc[0].nf,df2_fss.iloc[0].aic,s=300,c='blue',marker='x')
+            ax.axvline(df3_fss['One SE AIC'],c='blue',linestyle='-.',alpha=0.7)
+        if(three!='null'):
+            ax.plot(df1_be.nf,df1_be.aic,color='black',label='{f}'.format(f=three),alpha=0.7)
+            ax.scatter(df2_be.iloc[0].nf,df2_be.iloc[0].aic,s=300,c='black',marker='x')
+            ax.axvline(df3_be['One SE AIC'],c='black',linestyle=':',alpha=0.7)
+        
+        ax.set_xlabel('Number of Variables')
+        ax.set_ylabel('AIC')
+        ax.legend()
+
+        ax=fig.add_subplot(2,2,3)
+        if(one!='null'):
+            ax.plot(df1_bs.nf,df1_bs.bic,color='r',label='{f}'.format(f=one),alpha=0.7)
+            ax.scatter(df2_bs.iloc[1].nf,df2_bs.iloc[1].bic,s=300,c='r',marker='x')
+            ax.axvline(df3_bs['One SE BIC'],c='r',linestyle='--',alpha=0.7)
+        if(two!='null'):
+            ax.plot(df1_fss.nf,df1_fss.bic,color='blue',label='{f}'.format(f=two),alpha=0.7)
+            ax.scatter(df2_fss.iloc[1].nf,df2_fss.iloc[1].bic,s=300,c='blue',marker='x')
+            ax.axvline(df3_fss['One SE BIC'],c='blue',linestyle='-.',alpha=0.7)
+        if(three!='null'):
+            ax.plot(df1_be.nf,df1_be.bic,color='black',label='{f}'.format(f=three),alpha=0.7)
+            ax.scatter(df2_be.iloc[1].nf,df2_be.iloc[1].bic,s=300,c='black',marker='x')
+            ax.axvline(df3_be['One SE BIC'],c='black',linestyle=':',alpha=0.7)
+        
+        ax.set_xlabel('Number of Variables')
+        ax.set_ylabel('BIC')
+        ax.legend()
+        ax.legend()
+        ax=fig.add_subplot(2,2,4)
+        if(one!='null'):
+            ax.plot(df1_bs.nf,df1_bs.mse,color='r',label='{f}'.format(f=one),alpha=0.7)
+            ax.scatter(df2_bs.iloc[3].nf,df2_bs.iloc[3].mse,s=300,c='r',marker='x')
+            ax.axvline(df3_bs['One SE MSE'],c='r',linestyle='--',alpha=0.7)
+        if(two!='null'):
+            ax.plot(df1_fss.nf,df1_fss.mse,color='blue',label='{f}'.format(f=two),alpha=0.7)
+            ax.scatter(df2_fss.iloc[3].nf,df2_fss.iloc[3].mse,s=300,c='blue',marker='x')
+            ax.axvline(df3_fss['One SE MSE'],c='blue',linestyle='-.',alpha=0.7)
+        if(three!='null'):
+            ax.plot(df1_be.nf,df1_be.mse,color='black',label='{f}'.format(f=three),alpha=0.7)
+            ax.scatter(df2_be.iloc[3].nf,df2_be.iloc[3].mse,s=300,c='black',marker='x')
+            ax.axvline(df3_be['One SE MSE'],c='black',linestyle=':',alpha=0.7)
+        
+        ax.set_xlabel('Number of Variables')
+        ax.set_ylabel('MSE')
+        ax.legend()
+        #plt.savefig('{f}.png'.format(f=pngname))
+        plt.show()
