@@ -1,6 +1,7 @@
 import pandas as pd
 import sklearn 
 import numpy as np
+#imports bearbeiten
 
 
 class General():
@@ -115,7 +116,7 @@ class Subset():
                         pd.DataFrame({'Eliminated':eliminated})], axis=1, join='inner')
         df_be['Number_of_variables']=[len(i) for i in df_be['Variables']]
         return df_be
-        
+
     def ic(df_subset,df1,df_test,output='pred'):
         '''This method compares the subset-results with Information criteria and direct estimation of the test mse'''
         Xtr,ytr=df1[df1.columns.difference([output])],df1[output]
