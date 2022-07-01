@@ -37,12 +37,204 @@ class General():
         RSS= mean_squared_error(Y,model.predict(X))*len(Y)
         R_squared= model.score(X,Y)
         return RSS,R_squared
+    
+    def dataset_declaration(observations,mu=0,related=50,sigma=1,noise=20):
+        np.random.seed(42)#define the seed to asure compatibility
+        X=np.random.normal(mu, sigma, (observations, related))#related regressormatrix
+        X_noise=np.random.normal(mu, sigma, (observations, noise))#unrelated regressormatrix
+        if (related==0):
+            y=np.random.normal(mu,sigma,(1,observations))#normally distributed y if related regressors aren't provided
+        else:
+            y=np.zeros((1,observations))
+        for i in range(X.shape[1]):
+            y+=X[:,i]#sum the related regressors->true coefficients are 1
+        X=np.append(X, X_noise,axis=1)#combine unrelated and related regressors  
+        y=y.transpose()
+        return X,y
 
 class Regularization():
     '''Contains Functions for the Regularization Methods'''
+    def best_lambda(lambda_list,df_train,df_test,output='pred',methode='ridge'):
+        '''Method to find the minimal lambda value for ridge or lasso'''
+        #defining the regressormatrix and target variable for the training and testing set
+        Xtr,ytr=df_train[df_train.columns.difference([output])],df_train[output]
+        Xtst,ytst=df_test[df_test.columns.difference([output])],df_test[output]
+        #creating empty lists, which are later used to save the results
+        mse_list,r_squared_list,paramet=[],[],[]
+        #iterating over all elements in the given lists (contains all values we want to check for the min lambda) 
+        for a in lambda_list:
+            #performing the lasso or ridge regression (dependent on the choice at the method call)
+            if (methode=='lasso'):
+                model=Lasso(alpha=a,normalize=True).fit(Xtr,ytr)
+            elif (methode=='ridge'):
+                model=Ridge(alpha=a,normalize=True).fit(Xtr,ytr)
+            #determining and saving the test error, rsquared and model coefficients    
+            r_squared_list.append(model.score(Xtr,ytr))
+            mse_list.append(m(ytst,model.predict(Xtst)))
+            paramet.append(model.coef_)
+        df_p=pd.DataFrame(paramet)
+        df_p.columns=Xtr.columns
+        #calculating the minimal mse value and its asociated lambda position
+        min_mse= min(mse_list)
+        lambda_pos= lambda_list[mse_list.index(min_mse)]
+        #returning the minimal mse value and its position,as well as the mse and r-squared lists 
+        #and the dataframe,which contains all coefficients and their values for each lambda-value-model 
+        return min_mse,lambda_pos,mse_list,r_squared_list,df_p
+
+    def mult_split(df,a_r,a_l,count=5,frac=0.7,output='salary'):
+        df_train=[df.iloc[df.sample(frac=frac,random_state=i).index]for i in range(1,count+1)]
+        df_test=[df.drop(df.sample(frac=frac,random_state=i).index)for i in range(1,count+1)]
+        list_index=[df.sample(frac=frac,random_state=i).index for i in range(1,count+1)]
+        
+        y_train=[df_train[i][output] for i in range(count)]
+        X_train=[df_train[i][df.columns.difference([output])] for i in range(count)]
+        y_test=[df_test[i][output] for i in range(count)]
+        X_test=[df_test[i][df.columns.difference([output])] for i in range(count)]
+        
+        ridge=[Regularization.best_lambda(a_r,df_train[i],df_test[i],output=output)for i in range(count)]
+        lasso=[Regularization.best_lambda(a_l,df_train[i],df_test[i],output=output, methode='lasso')for i in range(count)]
+        
+        return ridge,lasso,y_train,X_train,y_test,X_test
+
+    def selection(reg,y_train,X_train,count=5,threshold=0.8,method='Lasso'):
+        #saving the minimal lambda values and all Dataframes for later use
+        min_y=[l[1]for l in reg]
+        df_full=[l[4]for l in reg]
+        if(method=='Ridge'):
+            #when we want to receive all ridge models with the minimal test error estimate
+            df_best_lambda=pd.DataFrame([Ridge(alpha=min_y[j]).fit(X_train[j],y_train[j]).coef_ for j in range(count)])
+            df_best_lambda.columns=df_full[1].columns         
+            
+            
+        elif(method=='Lasso'):
+            df_best_lambda=pd.DataFrame([Lasso(alpha=min_y[j]).fit(X_train[j],y_train[j]).coef_ for j in range(count)])#Liste mit allen optimalen DF Koeffizienten
+            #arange columns
+            df_best_lambda.columns=df_full[1].columns
+        #filter the columns and making a new dataframe to show what regressors are included in each model
+        liste=pd.DataFrame()
+        liste3=[]
+        #iterating over each row
+        for index, row in df_best_lambda[:count].iterrows():
+            #we iterate over each row, so over each optimal model for each different split
+            liste2=[]#creating a temporary list to overwrite the results for each model
+            for i in range(len(df_best_lambda[1:].columns)):
+                #selecting the column name, if the value isnt 0 and '---' if it is
+                if row[i] !=0:
+                    #if the value of the variable is not zero overwrite the value with the variable name
+                    liste2.append(str(row.index[i]))
+                else :
+                    #if the value of the variable is zero overwrite the value with the String: '---'
+                    liste2.append('---')
+                        
+            liste3.append(liste2)
+        #liste.append(liste3)
+        liste=pd.DataFrame(liste3)
+            
+        #creating a count column to count the nonzero variables of each split
+        df_best_lambda['Count'] = df_best_lambda[df_best_lambda.columns].ne(0).sum(axis=1)
+            
+        #making an index shift at the columns, so the Count column is in front
+        cols=df_best_lambda.columns.tolist()
+        cols = cols[-1:] + cols[:-1]
+        df_best_lambda=df_best_lambda[cols]
+            
+
+        #counting the nonzero variables over all splits 
+        temp=[]
+        for i in range(liste.shape[1]):
+            #iterating over all variables, saving the column name and counting the values
+            temp.append((cols[i+1],liste[i].value_counts()[str(cols[i+1])]))
+        df_count=pd.DataFrame(temp)
+        df_count=df_count.transpose()
+        df_count.columns = df_count.iloc[0]
+        df_count=df_count.iloc[1:,:]
+        df_count.index=['Count {f}'.format(f=method)]
+            #print(display(var1.sort_values(by=1,axis=1,ascending=False)))
+            #sorting the df_count dataframe, so the frequently selected variables are in front
+        df_return=df_count.sort_values(by='Count {f}'.format(f=method),axis=1,ascending=False)
+            #print('Regressors that are included in {t}% of the models:'.format(t=threshold*100))
+            #print(display(var1[var1>threshold*count].dropna(axis=1).sort_values(by=1,axis=1, ascending=False) ))
+        return df_return,df_best_lambda
 
 class Combined():
     '''Contains Functions involving both Regularization and Subset Methods'''
+    def min_mse(df_subset,df1,df_test,output='pred'):
+        Xtr,ytr=df1[df1.columns.difference([output])],df1[output]
+        Xtst,ytst=df_test[df_test.columns.difference([output])],df_test[output]#the test split from our data
+        variables,mse_list=[],[]
+        for i in df_subset:
+            x,y=Xtr[i],ytr
+            model = sm.OLS(y, x).fit()#fitting the model
+            pred_y=model.predict(Xtst[i])#predicting the target variable
+            mse= m(ytst,pred_y)#calculating the test mse of our predictions and the actual values 
+            mse_list.append(mse)
+            variables.append(i)
+        df=pd.concat([pd.DataFrame({'variables':variables}),pd.DataFrame({'mse':mse_list})], axis=1, join='inner')
+        df['nf']=[len(i) for i in df['variables']]
+        df.dropna()
+        df_selection=df[df['mse']==min(df['mse'])]
+        df_selection_one_se=dict()
+        df_selection_one_se['One SE MSE']=min(df[df['mse']-stats.sem(df.mse)<=min(df['mse'])]['nf'])
+        return df,df_selection,df_selection_one_se
+
+    def mult_split_be(df,count=5,frac=0.7,output='salary'):
+        df_train=[df.iloc[df.sample(frac=frac,random_state=i).index]for i in range(1,count+1)]
+        df_test=[df.drop(df.sample(frac=frac,random_state=i).index)for i in range(1,count+1)]
+        list_index=[df.sample(frac=frac,random_state=i).index for i in range(1,count+1)]
+        
+        y_train=[df_train[i][output] for i in range(count)]
+        X_train=[df_train[i][df.columns.difference([output])] for i in range(count)]
+        y_test=[df_test[i][output] for i in range(count)]
+        X_test=[df_test[i][df.columns.difference([output])] for i in range(count)]
+        
+        #calculating the forward and backward stepwise methods for each split
+        backwards=[Subset.backwards_elimination(df_train[i],output=output)for i in range(count)]
+        forwards=[Subset.forward_stepwise(df_train[i],output=output)for i in range(count)]
+        
+        #computing the minimum for each split
+        be_mse=[Combined.min_mse(backwards[i]['Variables'],df_train[i],df_test[i],output=output)[1] for i in range(count)]
+        fe_mse=[Combined.min_mse(forwards[i]['variables'],df_train[i],df_test[i],output=output)[1] for i in range(count)]
+        #creating a dataframe object
+        be_mse1=pd.concat([pd.DataFrame(be_mse[i])for i in range(count)],axis=0,join='inner')
+        fe_mse1=pd.concat([pd.DataFrame(fe_mse[i])for i in range(count)],axis=0,join='inner')
+        be_mse1=be_mse1.reset_index()
+        fe_mse1=fe_mse1.reset_index()
+        
+        return backwards,forwards,df_train,df_test,be_mse1,fe_mse1
+
+    def choice(be_mse,cols,method,count=5,output='salary'):
+        #calculating the count of variable selections of the subset methods similar to 'selection'
+        h,k=[],[]
+        for i in range(count):
+            for j in be_mse ['variables'][i]:
+                h.append(j)
+        for i in cols:
+                count_a = h.count(i)
+                k.append([i,count_a])
+        k=pd.DataFrame(k)
+        k.columns=['Variable','Count {f}'.format(f=method)]
+        k=k.transpose()
+        k.columns = k.iloc[0]
+        k=k.iloc[1:]
+        k=k.drop([output], axis = 1)
+        return k
+
+    def meanf(be_mse,fe_mse,lasso,ridge,df_lasso,df_ridge):
+        #calculating the mean of the estimated test error and included features for the 4 methods
+        be_mean_mse=round(np.mean(be_mse['mse']),5)
+        fe_mean_mse=round(np.mean(fe_mse['mse']),5)
+        ridge_mean_mse=np.mean([i[0]for i in ridge])
+        lasso_mean_mse=np.mean([i[0]for i in lasso])
+        msem=[be_mean_mse,fe_mean_mse,ridge_mean_mse,lasso_mean_mse]
+        #feature mean
+        be_mean_nf=round(np.mean(be_mse['nf']),5)
+        fe_mean_nf=round(np.mean(fe_mse['nf']),5)
+        lasso_mean_nf=np.mean(df_lasso.transpose()['Count Lasso'])
+        ridge_mean_nf=np.mean(df_ridge.transpose()['Count Ridge'])
+        nfm=[be_mean_nf,fe_mean_nf,ridge_mean_nf,lasso_mean_nf]
+        mean=pd.concat([pd.DataFrame({'min_mse_mean':msem}),pd.DataFrame({'nf_mean':nfm})],axis=1,join='inner')
+        mean.index=['Backwards','Forwards','Ridge','Lasso']
+        return mean
 
 class Subset():
     '''Contains Functions for the Subset Methods'''
